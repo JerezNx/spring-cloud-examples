@@ -1,0 +1,9 @@
+spring:
+  application:
+    #    注册进eureka的名字
+    name: CLIENT
+eureka:
+  client:
+    serviceUrl:
+      #      eureka的注册中心地址
+      defaultZone: http://127.0.0.1:6001/eureka/
