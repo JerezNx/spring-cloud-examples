@@ -370,6 +370,9 @@ public class InfoServiceImpl implements InfoService {
 　　服务名称：properties配置文件中的spring.application.name。
 
 　　服务的URL：就是对应的服务对外提供的URL路径监听。
+　　  
+参考：[https://www.cnblogs.com/jing99/p/11696192.html](https://www.cnblogs.com/jing99/p/11696192.html)  
+
 ### 7.2 基础使用
 #### 7.2.1 创建模块
 将之前的eureka client 拷贝1份，模块名为 spring-cloud-zuul
@@ -565,3 +568,174 @@ public class ZuulFallbackConfig {
 #### 7.4.3 测试
 重启Zuul，此时再次访问 [http://localhost:9000/a/provider/info](http://localhost:9000/a/provider/info)，和
 [http://localhost:9000/b/consumer/info](http://localhost:9000/b/consumer/info)，会发现当访问到7003时，返回了熔断信息。
+
+## 8. Config 配置中心
+### 8.1 概述
+
+### 8.2 服务端-数据库实现
+#### 8.2.1 新建 spring-cloud-config-server-db 模块
+将之前的client拷贝一份
+#### 8.2.2 添加依赖
+```
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-config-server</artifactId>
+</dependency>
+<dependency>
+    <groupId>com.h2database</groupId>
+    <artifactId>h2</artifactId>
+    <scope>runtime</scope>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-jdbc</artifactId>
+</dependency>
+```
+此处为了方便，数据库使用的是h2内存数据库。引入jdbc starter用于数据源的自动装配。  
+注：spring-cloud-config-server 依赖必须单独放在该模块，之前本地测试偷懒将所有依赖都放在根pom中，结果config server能起来，但client一直读不到配置。
+
+#### 8.2.3 数据库表结构
+设计一张表 SYS_CONFIG ，存放配置信息。表结构(schema-h2.sql):
+```
+DROP TABLE IF EXISTS SYS_CONFIG;
+
+CREATE TABLE SYS_CONFIG
+(
+	SERVICE_NAME VARCHAR(32) NOT NULL COMMENT '服务名',
+	ENV VARCHAR(16) NULL DEFAULT 'dev' COMMENT '环境，如dev prod test',
+	PROPERTY_KEY VARCHAR(128) NOT NULL COMMENT '属性KEY',
+	PROPERTY_VALUE VARCHAR(128) NULL DEFAULT NULL COMMENT '属性值',
+	PROPERTY_DEFAULT_VALUE VARCHAR(50) NULL DEFAULT NULL COMMENT '属性默认值',
+	REMARK VARCHAR(50) NULL DEFAULT NULL COMMENT '备注',
+	LABEL VARCHAR(50) NOT NULL DEFAULT 'master' COMMENT '标签'
+);
+```
+添2条测试数据(data-h2.sql)：
+```
+DELETE FROM SYS_CONFIG;
+
+INSERT INTO SYS_CONFIG (SERVICE_NAME, ENV, PROPERTY_KEY, PROPERTY_VALUE, PROPERTY_DEFAULT_VALUE, REMARK, LABEL) VALUES
+('CONSUMER', 'dev', 'test', 'test1@baomidou.com','','test','master'),
+('CONSUMER', 'dev', 'name', null ,'123','name','master');
+```
+#### 8.2.4 配置文件
+配置application.yml:
+```
+spring:
+  profiles:
+#     数据库形式配置 必须为 jdbc, 自动实现 JdbcEnvironmentRepository。
+    active: jdbc
+  datasource:
+    driver-class-name: org.h2.Driver
+    schema: classpath:db/schema-h2.sql
+    data: classpath:db/data-h2.sql
+    url: jdbc:h2:mem:test
+    username: root
+    password: test
+  application:
+    #    注册进eureka的名字
+    name: CONFIG-SERVER-DB
+  cloud:
+    config:
+      enabled: true
+      server:
+        default-label: dev
+        jdbc:
+#          查询结果集必须只有2个字段，表示key 和 value 
+          sql: SELECT PROPERTY_KEY , NVL(PROPERTY_VALUE,PROPERTY_DEFAULT_VALUE) FROM SYS_CONFIG WHERE SERVICE_NAME=? AND ENV=? AND LABEL=?
+eureka:
+  client:
+    serviceUrl:
+      #      eureka的注册中心地址
+      defaultZone: http://127.0.0.1:6001/eureka/
+server:
+  port: 10001
+```
+注1：以数据库为配置中心时，spring.profiles.active 必须为 **jdbc**。  
+注2：查询sql:
+> SELECT PROPERTY_KEY , NVL(PROPERTY_VALUE,PROPERTY_DEFAULT_VALUE) FROM SYS_CONFIG WHERE SERVICE_NAME=? AND ENV=? AND LABEL=?
+
+结果集必须只有2个字段，表示key 和 value 。  
+查询条件至少有3个：
+1. 第1个是服务名，对应于客户端中的 ==**spring.cloud.config.name**==，此处对应到数据库的字段 **SERVICE_NAME**。
+2. 第2个是当前环境，对应于客户端中的 ==**spring.cloud.config.profile**==，此处对应到数据库的字段 **ENV**
+3. 第3个是当前当前分支，一般使用git时指定，对应于客户端中的 ==**spring.cloud.config.label**==，此处对应到数据库的字段 **LABEL**
+
+还有两个参数是version、state，暂不作研究。
+
+#### 8.2.5 启动类添加 @EnableConfigServer 注解
+#### 8.2.6 测试
+启动config server，访问 [http://localhost:10001/CONSUMER/dev/master](http://localhost:10001/CONSUMER/dev/master)。即可看到配置属性：
+```
+{
+  "name": "CONSUMER",
+  "profiles": [
+    "dev"
+  ],
+  "label": "master",
+  "version": null,
+  "state": null,
+  "propertySources": [
+    {
+      "name": "CONSUMER-dev",
+      "source": {
+        "test": "test1@baomidou.com",
+        "name": "123"
+      }
+    }
+  ]
+}
+```
+url规则：http://[==config-server-ip==]:[==config-server-port==]/[==service-name==]/[==env==]/[==label==]
+
+### 8.3 服务端-git实现
+ 
+### 8.4 客户端
+直接在之前的consumer模块进行调整
+#### 8.4.1 添加依赖
+```
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-config</artifactId>
+</dependency>
+```
+
+#### 8.4.2 新建 bootstrap.yml
+```
+spring:
+  cloud:
+    config:
+      discovery:
+        enabled: true
+#        config-server的应用名
+        serviceId: CONFIG-SERVER-DB
+#        3个查询条件
+      name: CONSUMER
+      profile: dev
+      label: master
+      fail-fast: true
+  application:
+    name: CONSUMER
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://127.0.0.1:6001/eureka/
+server:
+  port: 8000
+```
+
+#### 8.4.3 测试
+修改ConsumerController，添加代码：
+```
+@Value("${name}")
+private String name;
+
+@PostConstruct
+@GetMapping("/config")
+public String config() {
+    System.out.println("name: " + name);
+    return name;
+}
+```
+启动consumer，控制台成打印name的值。
+
