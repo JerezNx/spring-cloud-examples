@@ -3,8 +3,8 @@
     <list />
   </option>
   <option name="httpMethod" value="GET" />
-  <option name="urlBase" value="http://localhost:8000" />
-  <option name="urlPath" value="consumer/infoByFeigin" />
+  <option name="urlBase" value="http://localhost:9000" />
+  <option name="urlPath" value="/a/provider/info" />
   <option name="headers">
     <list>
       <KeyValuePair>

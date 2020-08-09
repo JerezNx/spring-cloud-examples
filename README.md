@@ -1,3 +1,4 @@
+[toc]
 ## 1.前言
 
 ## 2.项目环境搭建
@@ -256,11 +257,11 @@ PROVIDER:
 
 ### 4.6 自定义Ribbon负载均衡策略
 
-## 5.Feigin 基于接口和注解进行请求
+## 5.Feign 基于接口和注解进行请求
 ### 5.1 概述
-在4中，使用RestTemplate进行rest请求，还要注意参数传递及返回值的转型，比较繁琐。则引入Feigin 简化操作。
+在4中，使用RestTemplate进行rest请求，还要注意参数传递及返回值的转型，比较繁琐。则引入Feign 简化操作。
 
-### 5.2 代码
+### 5.2 基础使用
 #### 5.2.1 添加依赖
 ```
 <dependency>
@@ -278,26 +279,289 @@ PROVIDER:
  * @since Create in 2020/8/8 20:06
  */
 @FeignClient(name = "PROVIDER")
-public interface InfoFeignClient {
+public interface InfoService {
 
-//    参数必须添加@RequestParam,否则feigin会把他方法请求体中，把请求方法改为post
+//    参数必须添加@RequestParam,否则feign会把他方法请求体中，把请求方法改为post
     @GetMapping("/provider/info")
     String info(@RequestParam("name") String name);
 
 }
 ```
-这里有个注意点，如果是get请求，请求参数必须加 @RequestParam 注解，而非springmvc那种可以不加。如果不加，feigin会把它放到请求体中，请求方法变成了Post，从而导致405错误。
+这里有个注意点，如果是get请求，请求参数必须加 @RequestParam 注解，而非springmvc那种可以不加。如果不加，feign会把它放到请求体中，请求方法变成了Post，从而导致405错误。
 
 #### 5.2.4 修改ConsumerController
 
 ```
 @Autowired
-private InfoFeignClient infoFeignClient;
+private InfoService infoService;
 
-@GetMapping("/infoByFeigin")
-public String infoByFeigin(String name) {
-    return infoFeignClient.info(name);
+@GetMapping("/infoByFeign")
+public String infoByFeign(String name) {
+    return infoService.info(name);
 }
 ```
 #### 5.2.5 重启测试
-重新启动消费者，访问 [http://localhost:8000/consumer/infoByFeigin?name=consumer](https://note.youdao.com/),可正常返回。不停方法，发现ribbon的负载策略依旧有效。
+重新启动消费者，访问 [http://localhost:8000/consumer/infoByFeign?name=consumer](http://localhost:8000/consumer/infoByFeign?name=consumer),可正常返回。不停方法，发现ribbon的负载策略依旧有效。
+
+## 6.Hystrix 服务熔断
+### 6.1 概述
+
+### 6.2 环境准备
+在之前基础上
+#### 6.2.1 添加依赖
+
+```
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-netflix-hystrix</artifactId>
+</dependency>
+```
+#### 6.2.2 启动类添加注解  @EnableHystrix
+
+### 6.3 Ribbon结合Hystrix
+修改ConsumerController 
+```
+@HystrixCommand(fallbackMethod = "fallbackInfo")
+@GetMapping("/info")
+public String info(String name) {
+    return restTemplate.getForObject("http://PROVIDER/provider/info?name=" + name, String.class);
+}
+
+public String fallbackInfo(String name) {
+    return name + "fallbackInfo";
+}
+```
+在方法上添加注解 **@HystrixCommand(fallbackMethod = "fallbackInfo")** ,其中 fallbackInfo 即指的当调用服务提供者出错时，fallback的方法。
+
+此时启动消费者，访问 [http://127.0.0.1:8000/consumer/info](http://127.0.0.1:8000/consumer/info)，一切正常。此时将提供者的7003的实例停掉，继续访问，发现7001和7002的正常返回，7003时，会返回 “consumerfallbackInfo”。
+
+### 6.5 Ribbon结合Feign
+修改配置文件，添加配置
+```
+feign:
+  hystrix:
+    enabled: true
+```
+新增 InfoService 的实现类
+```
+/**
+ * @author LQL
+ * @since Create in 2020/8/9 15:48
+ */
+@Service
+public class InfoServiceImpl implements InfoService {
+    @Override
+    public String info(String name) {
+        return name + "fallbackOfFeign";
+    }
+}
+```
+修改 InfoService 上的 @FeignClient 注解，添加 fallback 属性
+```
+@FeignClient(name = "PROVIDER", fallback = InfoServiceImpl.class)
+```
+重启消费者，访问 [http://localhost:8000/consumer/infoByFeign?name=consumer](http://localhost:8000/consumer/infoByFeign?name=consumer)，结果和上面的一样。
+
+## 7.Zuul 服务网关
+### 7.1 概述
+1、网关访问方式
+　　通过zuul访问服务的，URL地址默认格式为：http://zuulHostIp:port/要访问的服务名称/服务中的URL
+
+　　服务名称：properties配置文件中的spring.application.name。
+
+　　服务的URL：就是对应的服务对外提供的URL路径监听。
+### 7.2 基础使用
+#### 7.2.1 创建模块
+将之前的eureka client 拷贝1份，模块名为 spring-cloud-zuul
+#### 7.2.2 添加依赖
+```
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-netflix-zuul</artifactId>
+</dependency>
+```
+#### 7.2.3 启动类添加注解 @EnableZuulProxy
+#### 7.2.4 配置文件
+
+```
+spring:
+  application:
+    name: ZUUL
+server:
+  port: 9000
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://127.0.0.1:6001/eureka/
+zuul:
+  routes:
+#    自定义名称
+    provider:
+#      请求路径为 /a/**的，会被路由到 PROVIDER 服务
+      path: /a/**
+#      即 注册到 eureka 的名称
+      serviceId: PROVIDER
+    consumer:
+      path: /b/**
+      serviceId: CONSUMER
+```
+#### 7.2.5 测试
+启动zuul，分别访问 [http://localhost:9000/a/provider/info](http://localhost:9000/a/provider/info)，和
+[http://localhost:9000/b/consumer/info](http://localhost:9000/b/consumer/info)。
+都可正常返回。
+
+### 7.3 结合ribbon
+#### 7.3.1 概述
+通过访问上面网关的2个接口，发现访问Provider时是有负载均衡的，但策略好像是轮询。访问Consumer时是其中的配置的随机。
+#### 7.3.2 配置轮询策略
+方法同之前4.5 有3种方式，此处演示配置文件的方式。修改配置文件：
+```
+PROVIDER:
+  ribbon:
+    NFLoadBalancerRuleClassName: com.netflix.loadbalancer.RandomRule
+```
+重启Zuul，再次访问[http://localhost:9000/a/provider/info](http://localhost:9000/a/provider/info)，会发现负载策略变为了随机。
+### 7.4 结合Hystrix
+#### 7.4.1 概述
+当我们把Provider的7003实例停止后，通过网关访问Provider是等待比较长的时间后返回500，Consumer是很快返回了504 Gateway Timeout，打断点发现进入了Hystric的fallback方法，但没有正常返回错误信息。
+
+在Edgware版本之前，Zuul提供了接口ZuulFallbackProvider用于实现fallback处理。从Edgware版本开始，Zuul提供了ZuulFallbackProvider的子接口FallbackProvider来提供fallback处理。
+　　Zuul的fallback容错处理逻辑，只针对timeout异常处理，当请求被Zuul路由后，只要服务有返回（包括异常），都不会触发Zuul的fallback容错逻辑。
+
+　　因为对于Zuul网关来说，做请求路由分发的时候，结果由远程服务运算的。那么远程服务反馈了异常信息，Zuul网关不会处理异常，因为无法确定这个错误是否是应用真实想要反馈给客户端的。
+#### 7.4.2 代码
+新建FallbackProvider类，其中getRoute表示哪个服务名， 可以用 * 表示所有。
+```
+/**
+ * @author LQL
+ * @since Create in 2020/8/9 17:16
+ */
+public class CustomZuulFallbackProvider implements FallbackProvider {
+
+    private String applicationName;
+
+    public CustomZuulFallbackProvider(String applicationName) {
+        this.applicationName = applicationName;
+    }
+
+    /**
+     * 当前的fallback容错处理逻辑处理的是哪一个服务。可以使用通配符‘*’代表为全部的服务提供容错处理。
+     * @return
+     */
+    @Override
+    public String getRoute() {
+        return this.applicationName;
+    }
+
+    /**
+     * 当服务发生错误的时候，如何容错。
+     * @param route
+     * @param cause
+     * @return
+     */
+    @Override
+    public ClientHttpResponse fallbackResponse(String route, Throwable cause) {
+        cause.printStackTrace();
+        return this.executeFallback(HttpStatus.OK, route + "服务熔断",
+                "application", "json", "utf-8");
+    }
+
+    /**
+     * 具体处理过程。
+     *
+     * @param status       容错处理后的返回状态，如200正常GET请求结果，201正常POST请求结果，404资源找不到错误等。
+     *                     使用spring提供的枚举类型对象实现。HttpStatus
+     * @param contentMsg   自定义的响应内容。就是反馈给客户端的数据。
+     * @param mediaType    响应类型，是响应的主类型， 如： application、text、media。
+     * @param subMediaType 响应类型，是响应的子类型， 如： json、stream、html、plain、jpeg、png等。
+     * @param charsetName  响应结果的字符集。这里只传递字符集名称，如： utf-8、gbk、big5等。
+     * @return ClientHttpResponse 就是响应的具体内容。
+     * 相当于一个HttpServletResponse。
+     */
+    private final ClientHttpResponse executeFallback(final HttpStatus status,
+                                                     String contentMsg, String mediaType, String subMediaType, String charsetName) {
+        return new ClientHttpResponse() {
+
+            /**
+             * 设置响应的头信息
+             */
+            @Override
+            public HttpHeaders getHeaders() {
+                HttpHeaders header = new HttpHeaders();
+                MediaType mt = new MediaType(mediaType, subMediaType, Charset.forName(charsetName));
+                header.setContentType(mt);
+                return header;
+            }
+
+            /**
+             * 设置响应体
+             * zuul会将本方法返回的输入流数据读取，并通过HttpServletResponse的输出流输出到客户端。
+             */
+            @Override
+            public InputStream getBody() throws IOException {
+                String content = contentMsg;
+                return new ByteArrayInputStream(content.getBytes());
+            }
+
+            /**
+             * ClientHttpResponse的fallback的状态码 返回String
+             */
+            @Override
+            public String getStatusText() throws IOException {
+                return this.getStatusCode().getReasonPhrase();
+            }
+
+            /**
+             * ClientHttpResponse的fallback的状态码 返回HttpStatus
+             */
+            @Override
+            public HttpStatus getStatusCode() throws IOException {
+                return status;
+            }
+
+            /**
+             * ClientHttpResponse的fallback的状态码 返回int
+             */
+            @Override
+            public int getRawStatusCode() throws IOException {
+                return this.getStatusCode().value();
+            }
+
+            /**
+             * 回收资源方法
+             * 用于回收当前fallback逻辑开启的资源对象的。
+             * 不要关闭getBody方法返回的那个输入流对象。
+             */
+            @Override
+            public void close() {
+            }
+        };
+    }
+}
+
+```
+
+新增配置类，ZuulFallbackConfig
+```
+/**
+ * @author LQL
+ * @since Create in 2020/8/9 17:23
+ */
+@Configuration
+public class ZuulFallbackConfig {
+
+    @Bean
+    public FallbackProvider fallbackProvider() {
+        return new CustomZuulFallbackProvider("PROVIDER");
+    }
+
+    @Bean
+    public FallbackProvider fallbackConsumer() {
+        return new CustomZuulFallbackProvider("CONSUMER");
+    }
+
+}
+```
+#### 7.4.3 测试
+重启Zuul，此时再次访问 [http://localhost:9000/a/provider/info](http://localhost:9000/a/provider/info)，和
+[http://localhost:9000/b/consumer/info](http://localhost:9000/b/consumer/info)，会发现当访问到7003时，返回了熔断信息。

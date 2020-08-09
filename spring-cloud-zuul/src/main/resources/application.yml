@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: ZUUL
+server:
+  port: 9000
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://127.0.0.1:6001/eureka/
+zuul:
+  routes:
+#    自定义名称
+    provider:
+#      请求路径为 /a/**的，会被路由到 PROVIDER 服务
+      path: /a/**
+#      即 注册到 eureka 的名称
+      serviceId: PROVIDER
+    consumer:
+      path: /b/**
+      serviceId: CONSUMER
+
+PROVIDER:
+  ribbon:
+    NFLoadBalancerRuleClassName: com.netflix.loadbalancer.RandomRule
+#feign:
+#  hystrix:
+#    enabled: true

@@ -1,11 +1,12 @@
 package xyz.jereznx.controller;
 
+import com.netflix.hystrix.contrib.javanica.annotation.HystrixCommand;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
-import xyz.jereznx.config.InfoFeignClient;
+import xyz.jereznx.service.InfoService;
 
 /**
  * @author LQL
@@ -19,15 +20,20 @@ public class ConsumerController {
     private RestTemplate restTemplate;
 
     @Autowired
-    private InfoFeignClient infoFeignClient;
+    private InfoService infoService;
 
+    @HystrixCommand(fallbackMethod = "fallbackInfo")
     @GetMapping("/info")
     public String info(String name) {
         return restTemplate.getForObject("http://PROVIDER/provider/info?name=" + name, String.class);
     }
 
-    @GetMapping("/infoByFeigin")
-    public String infoByFeigin(String name) {
-        return infoFeignClient.info(name);
+    @GetMapping("/infoByFeign")
+    public String infoByFeign(String name) {
+        return infoService.info(name);
+    }
+
+    public String fallbackInfo(String name) {
+        return name + "fallbackInfo";
     }
 }

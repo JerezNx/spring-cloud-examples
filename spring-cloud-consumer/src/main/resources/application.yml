@@ -7,6 +7,10 @@ eureka:
       defaultZone: http://127.0.0.1:6001/eureka/
 server:
   port: 8000
+
 #PROVIDER:
 #  ribbon:
 #    NFLoadBalancerRuleClassName: com.netflix.loadbalancer.RandomRule
+feign:
+  hystrix:
+    enabled: true

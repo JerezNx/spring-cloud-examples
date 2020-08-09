@@ -8,6 +8,7 @@
         <module>spring-cloud-eureka-client</module>
         <module>spring-cloud-provider</module>
         <module>spring-cloud-consumer</module>
+        <module>spring-cloud-zuul</module>
     </modules>
     <parent>
         <groupId>org.springframework.boot</groupId>
@@ -63,6 +64,14 @@
                     <artifactId>junit-vintage-engine</artifactId>
                 </exclusion>
             </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-hystrix</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-zuul</artifactId>
         </dependency>
     </dependencies>
 
