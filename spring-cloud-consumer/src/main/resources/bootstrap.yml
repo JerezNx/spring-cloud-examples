@@ -1,0 +1,20 @@
+spring:
+  cloud:
+    config:
+      discovery:
+        enabled: true
+#        config-server的应用名
+        serviceId: CONFIG-SERVER-DB
+#        3个查询条件
+      name: CONSUMER
+      profile: dev
+      label: master
+      fail-fast: true
+  application:
+    name: CONSUMER
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://127.0.0.1:6001/eureka/
+server:
+  port: 8000

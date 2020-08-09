@@ -1,0 +1,29 @@
+spring:
+  profiles:
+#     数据库形式配置 必须为 jdbc, 自动实现 JdbcEnvironmentRepository。
+    active: jdbc
+  datasource:
+    driver-class-name: org.h2.Driver
+    schema: classpath:db/schema-h2.sql
+    data: classpath:db/data-h2.sql
+    url: jdbc:h2:mem:test
+    username: root
+    password: test
+  application:
+    #    注册进eureka的名字
+    name: CONFIG-SERVER-DB
+  cloud:
+    config:
+      enabled: true
+      server:
+        default-label: dev
+        jdbc:
+#          查询结果集必须只有2个字段，表示key 和 value
+          sql: SELECT PROPERTY_KEY , NVL(PROPERTY_VALUE,PROPERTY_DEFAULT_VALUE) FROM SYS_CONFIG WHERE SERVICE_NAME=? AND ENV=? AND LABEL=?
+eureka:
+  client:
+    serviceUrl:
+      #      eureka的注册中心地址
+      defaultZone: http://127.0.0.1:6001/eureka/
+server:
+  port: 10001
